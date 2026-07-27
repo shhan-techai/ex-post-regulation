@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>정책 뉴스 모니터링</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --paper: #f4f2ec;
+    --ink: #1c2530;
+    --ink-soft: #4b5563;
+    --line: #d8d3c4;
+    --accent: #8a5a2b;
+    --wire: #33544f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Noto Serif KR", Georgia, "Nanum Myeongjo", serif;
+    line-height: 1.5;
+  }
+  header {
+    border-bottom: 3px double var(--ink);
+    padding: 28px 24px 16px;
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  .masthead-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  h1 { font-size: 28px; letter-spacing: 0.5px; margin: 0; }
+  .clock {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--wire);
+    border: 1px solid var(--wire);
+    padding: 4px 10px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .subtitle {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 24px 80px; }
+  #topics {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-bottom: 22px; padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  #topics button {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; padding: 6px 12px;
+    border: 1px solid var(--line); background: transparent;
+    color: var(--ink-soft); border-radius: 999px; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  #topics button:hover { border-color: var(--wire); color: var(--wire); }
+  #topics button.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  #news-list { display: flex; flex-direction: column; }
+  .news-item {
+    display: grid; grid-template-columns: 108px 1fr; gap: 18px;
+    padding: 16px 0; border-bottom: 1px solid var(--line);
+  }
+  .news-item .tag {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; color: var(--accent); letter-spacing: 0.3px; padding-top: 2px;
+  }
+  .news-item a { color: var(--ink); text-decoration: none; font-size: 17px; font-weight: 600; }
+  .news-item a:hover { text-decoration: underline; }
+  .meta {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; color: var(--ink-soft); margin-top: 6px; letter-spacing: 0.2px;
+  }
+  .empty, .loading {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px; color: var(--ink-soft); padding: 40px 0; text-align: center;
+  }
+  @media (max-width: 560px) { .news-item { grid-template-columns: 1fr; gap: 4px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="masthead-row">
+    <h1>정책 뉴스 모니터링</h1>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+  <div class="subtitle">매시 정각 자동 수집 · 통신·개인정보 관련 11개 토픽</div>
+</header>
+
+<main>
+  <div id="topics"></div>
+  <div id="news-list" class="loading">불러오는 중...</div>
+</main>
+
+<script>
+  const SUPABASE_URL = "https://dotaofnzjetwmwqfxwcj.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_lBvTG1ZI3NIfn17weftMXg_x8nfqjUu";
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const TOPICS = [
+    "이용자보호","통신시장","카카오 브랜드 메시지","connecting information",
+    "연계정보","본인확인기관","위치정보","통신분쟁",
+    "전기통신사업법","정보통신망법","개인정보보호법",
+  ];
+
+  function renderClock() {
+    const el = document.getElementById("clock");
+    const now = new Date();
+    el.textContent = now.toLocaleTimeString("ko-KR", { hour12: false }) + " KST";
+  }
+  renderClock();
+  setInterval(renderClock, 1000);
+
+  function renderTopicButtons(activeTopic) {
+    const el = document.getElementById("topics");
+    const all = [{ label: "전체", value: null }, ...TOPICS.map((t) => ({ label: t, value: t }))];
+    el.innerHTML = all.map((t) =>
+      `<button data-value="${t.value ?? ""}" class="${activeTopic === t.value ? "active" : ""}">${t.label}</button>`
+    ).join("");
+    el.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => loadNews(btn.dataset.value || null));
+    });
+  }
+
+  async function loadNews(topic) {
+    renderTopicButtons(topic);
+    const listEl = document.getElementById("news-list");
+    listEl.className = "loading";
+    listEl.textContent = "불러오는 중...";
+
+    let query = supabase
+      .from("news")
+      .select("title,url,source,category,published_at")
+      .order("published_at", { ascending: false })
+      .limit(60);
+
+    if (topic) query = query.eq("category", topic);
+
+    const { data, error } = await query;
+
+    if (error) {
+      listEl.className = "empty";
+      listEl.textContent = "오류: " + error.message;
+      return;
+    }
+    if (!data || data.length === 0) {
+      listEl.className = "empty";
+      listEl.textContent = "아직 수집된 뉴스가 없습니다.";
+      return;
+    }
+
+    listEl.className = "";
+    listEl.innerHTML = data.map((n) => {
+      const time = n.published_at
+        ? new Date(n.published_at).toLocaleString("ko-KR", { hour12: false })
+        : "-";
+      return `
+        <div class="news-item">
+          <div class="tag">${n.category ?? ""}</div>
+          <div>
+            <a href="${n.url}" target="_blank" rel="noopener">${n.title}</a>
+            <div class="meta">${n.source ?? "출처 미확인"} · ${time}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  loadNews(null);
+</script>
+
+</body>
+</html>
