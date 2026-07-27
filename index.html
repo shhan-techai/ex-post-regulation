@@ -108,7 +108,7 @@
   const SUPABASE_URL = "https://dotaofnzjetwmwqfxwcj.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_lBvTG1ZI3NIfn17weftMXg_x8nfqjUu";
 
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const TOPICS = [
     "이용자보호","통신시장","카카오 브랜드 메시지","connecting information",
@@ -141,7 +141,7 @@
     listEl.className = "loading";
     listEl.textContent = "불러오는 중...";
 
-    let query = supabase
+    let query = sb
       .from("news")
       .select("title,url,source,category,published_at")
       .order("published_at", { ascending: false })
